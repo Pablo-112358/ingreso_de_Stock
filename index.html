@@ -239,8 +239,9 @@
   <h1>◆ STOCK DIARIO</h1>
   <div class="header-meta">
     <input type="date" id="date-picker" />
-    <div class="user-badge" onclick="cambiarUsuario()" title="Clic para cambiar usuario">
-      👤 <span id="usuario-display">cargando...</span>
+    <div class="user-badge" onclick="cambiarUsuario()" title="Clic para cerrar sesión">
+      👤 <span id="usuario-display">—</span>
+      <span id="usuario-email" style="color:var(--muted);font-size:0.65rem;margin-left:0.4rem;"></span>
     </div>
     <span class="date-display" id="live-clock"></span>
   </div>
@@ -271,7 +272,7 @@
 //   Reemplazá la URL de abajo por la URL que te dio Apps Script
 //   al hacer "Implementar → Nueva implementación"
 // ============================================================
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyOsF42a0bnsjMY8RzLim3ZfxTAZA30J4uqkCrndJZJCM_2tvf95CnaKADNBW07Bia5FA/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/REEMPLAZAR_CON_TU_URL/exec';
 
 // ============================================================
 const PRODUCTS = [
@@ -318,27 +319,150 @@ PRODUCTS.forEach(sec => sec.items.forEach(name => {
   state[name] = { freezer: '', heladera: '' };
 }));
 
-// ── Usuario ──────────────────────────────────────────────────
+// ============================================================
+// ★ EMAILS AUTORIZADOS — lista de control en el cliente
+// Esto NO reemplaza la validación del servidor (Apps Script),
+// es una primera capa que evita que usuarios no autorizados
+// siquiera lleguen a intentar guardar.
+// ============================================================
+const EMAILS_AUTORIZADOS = [
+  'pablo@tomassoglobal.com',
+  'caba.corrientes427@tomassoglobal.com',
+  'ctherubicon@outlook.com',
+  // agregá más emails acá si necesitás
+];
+// ============================================================
+
+// ── Sesión de usuario ─────────────────────────────────────────
+function getSession() {
+  try {
+    const s = localStorage.getItem('stock_session');
+    return s ? JSON.parse(s) : null;
+  } catch(e) { return null; }
+}
+function setSession(email, nombre) {
+  localStorage.setItem('stock_session', JSON.stringify({ email, nombre, ts: Date.now() }));
+}
+function clearSession() {
+  localStorage.removeItem('stock_session');
+}
 function getUsuario() {
-  return localStorage.getItem('stock_usuario') || '';
+  const s = getSession();
+  return s ? s.nombre : '';
 }
-function setUsuario(nombre) {
-  localStorage.setItem('stock_usuario', nombre);
-  document.getElementById('usuario-display').textContent = nombre || 'sin nombre';
+function getEmail() {
+  const s = getSession();
+  return s ? s.email : '';
 }
+
+// ── Login overlay ─────────────────────────────────────────────
+function mostrarLogin(mensaje) {
+  // Bloquear el formulario
+  document.getElementById('form-root').style.display = 'none';
+  document.querySelector('.actions-bar').style.display = 'none';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'login-overlay';
+  overlay.style.cssText = `
+    position:fixed; inset:0; background:var(--bg);
+    display:flex; align-items:center; justify-content:center;
+    z-index:999; flex-direction:column; gap:1.5rem;
+    font-family:'DM Mono',monospace;
+  `;
+  overlay.innerHTML = `
+    <div style="text-align:center;">
+      <div style="font-family:'Syne',sans-serif;font-size:1.8rem;font-weight:800;
+                  color:var(--accent);letter-spacing:-0.02em;">◆ STOCK DIARIO</div>
+      <div style="color:var(--muted);font-size:0.75rem;margin-top:0.4rem;">Tomasso — Acceso restringido</div>
+    </div>
+    ${mensaje ? `<div style="color:var(--accent2);font-size:0.78rem;border:1px solid var(--accent2);
+                  padding:0.5rem 1rem;border-radius:4px;">${mensaje}</div>` : ''}
+    <div style="display:flex;flex-direction:column;gap:0.8rem;width:320px;">
+      <div style="font-size:0.72rem;color:var(--muted);">Tu email de Google</div>
+      <input id="login-email" type="email" placeholder="nombre@ejemplo.com"
+        style="background:var(--input-bg);border:1px solid var(--border);color:var(--text);
+               font-family:'DM Mono',monospace;font-size:0.85rem;padding:0.6rem 0.9rem;
+               border-radius:4px;width:100%;outline:none;"
+        autocomplete="email" />
+      <div style="font-size:0.72rem;color:var(--muted);">Tu nombre (para identificar envíos)</div>
+      <input id="login-nombre" type="text" placeholder="Pablo"
+        style="background:var(--input-bg);border:1px solid var(--border);color:var(--text);
+               font-family:'DM Mono',monospace;font-size:0.85rem;padding:0.6rem 0.9rem;
+               border-radius:4px;width:100%;outline:none;" />
+      <button onclick="intentarLogin()"
+        style="background:var(--accent);color:#000;font-family:'DM Mono',monospace;
+               font-size:0.85rem;font-weight:500;border:none;border-radius:4px;
+               padding:0.7rem;cursor:pointer;margin-top:0.3rem;">
+        Ingresar →
+      </button>
+    </div>
+    <div style="font-size:0.65rem;color:var(--muted);text-align:center;max-width:300px;">
+      Solo cuentas autorizadas pueden acceder.<br>
+      Si no tenés acceso, contactá al administrador.
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Enter en los inputs dispara login
+  ['login-email','login-nombre'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', e => {
+      if (e.key === 'Enter') intentarLogin();
+    });
+  });
+
+  // Foco automático
+  setTimeout(() => document.getElementById('login-email').focus(), 100);
+}
+
+function intentarLogin() {
+  const email  = (document.getElementById('login-email').value  || '').trim().toLowerCase();
+  const nombre = (document.getElementById('login-nombre').value || '').trim();
+
+  if (!email) {
+    document.getElementById('login-email').style.borderColor = 'var(--accent2)';
+    return;
+  }
+  if (!nombre) {
+    document.getElementById('login-nombre').style.borderColor = 'var(--accent2)';
+    return;
+  }
+
+  // Validar contra lista autorizada
+  if (!EMAILS_AUTORIZADOS.includes(email)) {
+    document.getElementById('login-overlay').remove();
+    mostrarLogin('❌ Email no autorizado: ' + email);
+    return;
+  }
+
+  // Login exitoso
+  setSession(email, nombre);
+  document.getElementById('login-overlay').remove();
+  activarFormulario(nombre, email);
+}
+
+function activarFormulario(nombre, email) {
+  document.getElementById('form-root').style.display = '';
+  document.querySelector('.actions-bar').style.display = '';
+  document.getElementById('usuario-display').textContent = nombre;
+  document.getElementById('usuario-email').textContent   = email;
+}
+
 function cambiarUsuario() {
-  const actual = getUsuario();
-  const nuevo = prompt('Ingresá tu nombre de usuario:', actual);
-  if (nuevo !== null) setUsuario(nuevo.trim());
+  if (!confirm('¿Cerrar sesión de ' + getEmail() + '?')) return;
+  clearSession();
+  location.reload();
 }
-// Inicializar usuario
+
+// ── Inicializar sesión al cargar ──────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
-  const u = getUsuario();
-  if (!u) {
-    const nombre = prompt('Primera vez: ingresá tu nombre para identificar los envíos:') || 'usuario1';
-    setUsuario(nombre.trim());
+  const session = getSession();
+  if (!session || !session.email) {
+    mostrarLogin(null);
+  } else if (!EMAILS_AUTORIZADOS.includes(session.email.toLowerCase())) {
+    clearSession();
+    mostrarLogin('⚠️ Tu sesión anterior no es válida.');
   } else {
-    document.getElementById('usuario-display').textContent = u;
+    activarFormulario(session.nombre, session.email);
   }
 });
 
@@ -487,7 +611,7 @@ async function saveData() {
     });
   });
 
-  const payload = { date, usuario, rows };
+  const payload = { date, usuario, email: getEmail(), rows };
 
   // UI feedback
   const btn = document.getElementById('btn-save');
