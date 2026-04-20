@@ -231,18 +231,123 @@
   ::-webkit-scrollbar { width: 5px; }
   ::-webkit-scrollbar-track { background: var(--bg); }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── LOGIN SCREEN ─────────────────────────────────────────── */
+  #login-screen {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #login-screen.hidden { display: none; }
+  .login-box {
+    width: 100%;
+    max-width: 360px;
+    padding: 2.5rem 2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 1rem;
+  }
+  .login-logo {
+    font-family: 'Syne', sans-serif;
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: var(--accent);
+    margin-bottom: 0.3rem;
+    letter-spacing: -0.02em;
+  }
+  .login-sub { font-size: 0.72rem; color: var(--muted); margin-bottom: 2rem; }
+  .login-field { margin-bottom: 1rem; }
+  .login-field label {
+    display: block;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+  .login-field input {
+    width: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    padding: 0.6rem 0.8rem;
+    transition: border-color 0.15s;
+  }
+  .login-field input:focus { outline: none; border-color: var(--accent); }
+  .btn-login {
+    width: 100%;
+    background: var(--accent);
+    color: #000;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0.75rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 0.5rem;
+    transition: background 0.15s, transform 0.1s;
+    letter-spacing: 0.03em;
+  }
+  .btn-login:hover  { background: #d4eb00; transform: translateY(-1px); }
+  .btn-login:active { transform: translateY(0); }
+  .btn-login:disabled { background: #555; color: #888; cursor: not-allowed; transform: none; }
+  .login-error {
+    font-size: 0.75rem;
+    color: var(--accent2);
+    margin-top: 0.75rem;
+    min-height: 1rem;
+    text-align: center;
+  }
+  .logout-btn {
+    font-size: 0.68rem;
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--border);
+    padding: 0.3rem 0.7rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .logout-btn:hover { border-color: var(--accent2); color: var(--accent2); }
 </style>
 </head>
 <body>
+
+<!-- ── LOGIN SCREEN ───────────────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">◆ STOCK DIARIO</div>
+    <div class="login-sub">Tomasso — Sistema de stock</div>
+    <div class="login-field">
+      <label>Usuario</label>
+      <input type="text" id="login-user" placeholder="tu usuario" autocomplete="username" />
+    </div>
+    <div class="login-field">
+      <label>Contraseña</label>
+      <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" />
+    </div>
+    <button class="btn-login" id="btn-login" onclick="doLogin()">Ingresar →</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
 
 <header>
   <h1>◆ STOCK DIARIO</h1>
   <div class="header-meta">
     <input type="date" id="date-picker" />
-    <div class="user-badge" onclick="cambiarUsuario()" title="Clic para cerrar sesión">
+    <div class="user-badge">
       👤 <span id="usuario-display">—</span>
-      <span id="usuario-email" style="color:var(--muted);font-size:0.65rem;margin-left:0.4rem;"></span>
     </div>
+    <button class="logout-btn" onclick="doLogout()" title="Cerrar sesión">Salir</button>
     <span class="date-display" id="live-clock"></span>
   </div>
 </header>
@@ -319,150 +424,90 @@ PRODUCTS.forEach(sec => sec.items.forEach(name => {
   state[name] = { freezer: '', heladera: '' };
 }));
 
-// ============================================================
-// ★ EMAILS AUTORIZADOS — lista de control en el cliente
-// Esto NO reemplaza la validación del servidor (Apps Script),
-// es una primera capa que evita que usuarios no autorizados
-// siquiera lleguen a intentar guardar.
-// ============================================================
-const EMAILS_AUTORIZADOS = [
-  'pablo@tomassoglobal.com',
-  'caba.corrientes427@tomassoglobal.com',
-  'ctherubicon@outlook.com',
-  // agregá más emails acá si necesitás
-];
-// ============================================================
+// ── AUTENTICACIÓN ────────────────────────────────────────────
+// La validación real ocurre en el Apps Script (backend).
+// El token de sesión se guarda en sessionStorage (se borra al cerrar el tab).
 
-// ── Sesión de usuario ─────────────────────────────────────────
 function getSession() {
-  try {
-    const s = localStorage.getItem('stock_session');
-    return s ? JSON.parse(s) : null;
-  } catch(e) { return null; }
+  try { return JSON.parse(sessionStorage.getItem('stock_session') || 'null'); } catch(e) { return null; }
 }
-function setSession(email, nombre) {
-  localStorage.setItem('stock_session', JSON.stringify({ email, nombre, ts: Date.now() }));
+function setSession(data) {
+  sessionStorage.setItem('stock_session', JSON.stringify(data));
 }
 function clearSession() {
-  localStorage.removeItem('stock_session');
+  sessionStorage.removeItem('stock_session');
 }
 function getUsuario() {
   const s = getSession();
-  return s ? s.nombre : '';
-}
-function getEmail() {
-  const s = getSession();
-  return s ? s.email : '';
+  return s ? s.usuario : '';
 }
 
-// ── Login overlay ─────────────────────────────────────────────
-function mostrarLogin(mensaje) {
-  // Bloquear el formulario
-  document.getElementById('form-root').style.display = 'none';
-  document.querySelector('.actions-bar').style.display = 'none';
+async function doLogin() {
+  const user    = document.getElementById('login-user').value.trim();
+  const pass    = document.getElementById('login-pass').value;
+  const errEl   = document.getElementById('login-error');
+  const btn     = document.getElementById('btn-login');
 
-  const overlay = document.createElement('div');
-  overlay.id = 'login-overlay';
-  overlay.style.cssText = `
-    position:fixed; inset:0; background:var(--bg);
-    display:flex; align-items:center; justify-content:center;
-    z-index:999; flex-direction:column; gap:1.5rem;
-    font-family:'DM Mono',monospace;
-  `;
-  overlay.innerHTML = `
-    <div style="text-align:center;">
-      <div style="font-family:'Syne',sans-serif;font-size:1.8rem;font-weight:800;
-                  color:var(--accent);letter-spacing:-0.02em;">◆ STOCK DIARIO</div>
-      <div style="color:var(--muted);font-size:0.75rem;margin-top:0.4rem;">Tomasso — Acceso restringido</div>
-    </div>
-    ${mensaje ? `<div style="color:var(--accent2);font-size:0.78rem;border:1px solid var(--accent2);
-                  padding:0.5rem 1rem;border-radius:4px;">${mensaje}</div>` : ''}
-    <div style="display:flex;flex-direction:column;gap:0.8rem;width:320px;">
-      <div style="font-size:0.72rem;color:var(--muted);">Tu email de Google</div>
-      <input id="login-email" type="email" placeholder="nombre@ejemplo.com"
-        style="background:var(--input-bg);border:1px solid var(--border);color:var(--text);
-               font-family:'DM Mono',monospace;font-size:0.85rem;padding:0.6rem 0.9rem;
-               border-radius:4px;width:100%;outline:none;"
-        autocomplete="email" />
-      <div style="font-size:0.72rem;color:var(--muted);">Tu nombre (para identificar envíos)</div>
-      <input id="login-nombre" type="text" placeholder="Pablo"
-        style="background:var(--input-bg);border:1px solid var(--border);color:var(--text);
-               font-family:'DM Mono',monospace;font-size:0.85rem;padding:0.6rem 0.9rem;
-               border-radius:4px;width:100%;outline:none;" />
-      <button onclick="intentarLogin()"
-        style="background:var(--accent);color:#000;font-family:'DM Mono',monospace;
-               font-size:0.85rem;font-weight:500;border:none;border-radius:4px;
-               padding:0.7rem;cursor:pointer;margin-top:0.3rem;">
-        Ingresar →
-      </button>
-    </div>
-    <div style="font-size:0.65rem;color:var(--muted);text-align:center;max-width:300px;">
-      Solo cuentas autorizadas pueden acceder.<br>
-      Si no tenés acceso, contactá al administrador.
-    </div>
-  `;
-  document.body.appendChild(overlay);
+  if (!user || !pass) {
+    errEl.textContent = 'Completá usuario y contraseña.';
+    return;
+  }
 
-  // Enter en los inputs dispara login
-  ['login-email','login-nombre'].forEach(id => {
-    document.getElementById(id).addEventListener('keydown', e => {
-      if (e.key === 'Enter') intentarLogin();
+  btn.disabled     = true;
+  btn.textContent  = 'Verificando...';
+  errEl.textContent = '';
+
+  try {
+    const res  = await fetch(APPS_SCRIPT_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body:    JSON.stringify({ action: 'login', user, pass })
     });
+    const data = await res.json();
+
+    if (data.status === 'ok') {
+      setSession({ usuario: data.usuario, token: data.token });
+      document.getElementById('usuario-display').textContent = data.usuario;
+      document.getElementById('login-screen').classList.add('hidden');
+      // Enfocar el formulario
+      document.getElementById('date-picker').focus();
+    } else {
+      errEl.textContent = data.message || 'Usuario o contraseña incorrectos.';
+      document.getElementById('login-pass').value = '';
+      document.getElementById('login-pass').focus();
+    }
+  } catch(e) {
+    errEl.textContent = 'Error de conexión. Intentá de nuevo.';
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = 'Ingresar →';
+  }
+}
+
+function doLogout() {
+  if (!confirm('¿Cerrar sesión?')) return;
+  clearSession();
+  document.getElementById('login-user').value = '';
+  document.getElementById('login-pass').value = '';
+  document.getElementById('login-error').textContent = '';
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('usuario-display').textContent = '—';
+}
+
+// Enter en campos de login
+window.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('login-pass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') doLogin();
+  });
+  document.getElementById('login-user').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('login-pass').focus();
   });
 
-  // Foco automático
-  setTimeout(() => document.getElementById('login-email').focus(), 100);
-}
-
-function intentarLogin() {
-  const email  = (document.getElementById('login-email').value  || '').trim().toLowerCase();
-  const nombre = (document.getElementById('login-nombre').value || '').trim();
-
-  if (!email) {
-    document.getElementById('login-email').style.borderColor = 'var(--accent2)';
-    return;
-  }
-  if (!nombre) {
-    document.getElementById('login-nombre').style.borderColor = 'var(--accent2)';
-    return;
-  }
-
-  // Validar contra lista autorizada
-  if (!EMAILS_AUTORIZADOS.includes(email)) {
-    document.getElementById('login-overlay').remove();
-    mostrarLogin('❌ Email no autorizado: ' + email);
-    return;
-  }
-
-  // Login exitoso
-  setSession(email, nombre);
-  document.getElementById('login-overlay').remove();
-  activarFormulario(nombre, email);
-}
-
-function activarFormulario(nombre, email) {
-  document.getElementById('form-root').style.display = '';
-  document.querySelector('.actions-bar').style.display = '';
-  document.getElementById('usuario-display').textContent = nombre;
-  document.getElementById('usuario-email').textContent   = email;
-}
-
-function cambiarUsuario() {
-  if (!confirm('¿Cerrar sesión de ' + getEmail() + '?')) return;
-  clearSession();
-  location.reload();
-}
-
-// ── Inicializar sesión al cargar ──────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
-  const session = getSession();
-  if (!session || !session.email) {
-    mostrarLogin(null);
-  } else if (!EMAILS_AUTORIZADOS.includes(session.email.toLowerCase())) {
-    clearSession();
-    mostrarLogin('⚠️ Tu sesión anterior no es válida.');
-  } else {
-    activarFormulario(session.nombre, session.email);
+  // Si hay sesión activa, saltar el login
+  const s = getSession();
+  if (s && s.token) {
+    document.getElementById('usuario-display').textContent = s.usuario;
+    document.getElementById('login-screen').classList.add('hidden');
   }
 });
 
@@ -611,7 +656,13 @@ async function saveData() {
     });
   });
 
-  const payload = { date, usuario, email: getEmail(), rows };
+  const session = getSession();
+  if (!session || !session.token) {
+    toast('Sesión expirada. Volvé a iniciar sesión.', true);
+    doLogout();
+    return;
+  }
+  const payload = { date, usuario: session.usuario, token: session.token, rows };
 
   // UI feedback
   const btn = document.getElementById('btn-save');
